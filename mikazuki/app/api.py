@@ -50,7 +50,59 @@ trainer_mapping = {
     "sd3-lora": "./scripts/dev/sd3_train_network.py",
     "flux-lora": "./scripts/dev/flux_train_network.py",
     "flux-finetune": "./scripts/dev/flux_train.py",
+    "anima-lora": "./sd-scripts/anima_train_network.py",
 }
+
+ANIMA_ONLY_KEYS = {
+    "qwen3",
+    "vae",
+    "llm_adapter_path",
+    "t5_tokenizer_path",
+    "qwen3_max_token_length",
+    "t5_max_token_length",
+    "attn_mode",
+    "split_attn",
+    "vae_chunk_size",
+    "vae_disable_cache",
+    "qwen_image_vae_2d",
+    "blocks_to_swap",
+    "unsloth_offload_checkpointing",
+    "compile",
+    "compile_backend",
+    "compile_mode",
+    "compile_dynamic",
+    "compile_fullgraph",
+    "compile_cache_size_limit",
+    "cuda_allow_tf32",
+    "cuda_cudnn_benchmark",
+}
+
+FLUX_ONLY_KEYS = {
+    "ae",
+    "clip_l",
+    "t5xxl",
+    "t5xxl_max_token_length",
+    "train_t5xxl",
+    "apply_t5_attn_mask",
+    "model_prediction_type",
+    "guidance_scale",
+    "fp8_base",
+    "fp8_base_unet",
+}
+
+
+def resolve_training_backend(config: dict, model_train_type: str) -> Tuple[str, str]:
+    """Resolve GUI model selection to a concrete trainer and strip incompatible parameters."""
+    model_type = config.get("model_type")
+    if model_train_type == "flux-lora" and model_type == "anima":
+        config.pop("model_type", None)
+        for key in FLUX_ONLY_KEYS:
+            config.pop(key, None)
+        return "anima-lora", trainer_mapping["anima-lora"]
+
+    for key in ANIMA_ONLY_KEYS:
+        config.pop(key, None)
+    return model_train_type, trainer_mapping[model_train_type]
 
 
 async def load_schemas():
@@ -131,13 +183,33 @@ async def create_toml_file(request: Request):
 
     suggest_cpu_threads = 8 if len(train_utils.get_total_images(config["train_data_dir"])) > 200 else 2
     model_train_type = config.pop("model_train_type", "sd-lora")
-    trainer_file = trainer_mapping[model_train_type]
+    effective_train_type, trainer_file = resolve_training_backend(config, model_train_type)
 
-    if model_train_type != "sdxl-finetune":
+    if effective_train_type != "sdxl-finetune":
         if not train_utils.validate_data_dir(config["train_data_dir"]):
             return APIResponseFail(message="训练数据集路径不存在或没有图片，请检查目录。")
 
-    validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], model_train_type)
+    if effective_train_type == "anima-lora":
+        if not os.path.exists(trainer_file):
+            return APIResponseFail(
+                message="Anima 训练脚本不存在。请运行 `git submodule update --init --recursive` 后重启 GUI。"
+            )
+        for key, label in [("qwen3", "Qwen3-0.6B"), ("vae", "Qwen-Image VAE")]:
+            value = config.get(key)
+            if not value:
+                return APIResponseFail(message=f"Anima 训练需要指定 {label} 路径。")
+            if not os.path.exists(value):
+                return APIResponseFail(message=f"{label} 路径不存在: {value}")
+
+        # Optional Anima paths must be omitted instead of serialized as empty strings.
+        # sd-scripts treats a non-None empty path as a real directory and fails to load it.
+        for key in ("llm_adapter_path", "t5_tokenizer_path"):
+            if not config.get(key):
+                config.pop(key, None)
+
+        config.setdefault("network_module", "networks.lora_anima")
+
+    validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], effective_train_type)
     if not validated:
         return APIResponseFail(message=message)
 
@@ -227,7 +299,7 @@ async def pick_file(picker_type: str):
     if picker_type == "folder":
         coro = asyncio.to_thread(open_directory_selector, "")
     elif picker_type == "model-file":
-        file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt"), ("all files", "*.*")]
+        file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt;*.pth"), ("all files", "*.*")]
         coro = asyncio.to_thread(open_file_selector, "", "Select file", file_types)
 
     result = await coro
@@ -245,7 +317,7 @@ async def get_files(pick_type) -> APIResponse:
         "model-file": {
             "type": "file",
             "path": "./sd-models",
-            "filter": "(.safetensors|.ckpt|.pt)"
+            "filter": "(.safetensors|.ckpt|.pt|.pth)"
         },
         "model-saved-file": {
             "type": "file",
