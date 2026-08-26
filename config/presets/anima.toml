@@ -1,7 +1,7 @@
 [metadata]
 name = "Anima LoRA 训练"
 version = "1.0"
-author = "WwlWss / ChatGPT"
+author = "WwlWss"
 train_type = "flux-lora"
 description = "使用新版 kohya-ss/sd-scripts 的 anima_train_network.py 训练 Anima LoRA。"
 
