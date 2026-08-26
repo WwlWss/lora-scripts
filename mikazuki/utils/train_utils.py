@@ -171,10 +171,11 @@ def validate_model(model_name: str, training_type: str = "sd-lora"):
         if model_type not in supported_types:
             return False, "Pretrained model is not a supported SD/Flux/Lumina/Anima checkpoint / 校验失败：底模不是支持的 SD、Flux、Lumina 或 Anima 模型"
 
-        if training_type == "anima-lora" and model_type != ModelType.ANIMA:
-            return False, "Pretrained model is not Anima, but Anima LoRA training is selected / 校验失败：当前选择 Anima LoRA，但底模不是 Anima。"
+        anima_training_types = {"anima-lora", "anima-finetune"}
+        if training_type in anima_training_types and model_type != ModelType.ANIMA:
+            return False, "Pretrained model is not Anima, but Anima training is selected / 校验失败：当前选择 Anima 训练，但底模不是 Anima。"
 
-        if model_type == ModelType.ANIMA and training_type != "anima-lora":
+        if model_type == ModelType.ANIMA and training_type not in anima_training_types:
             return False, "Pretrained model is Anima. Select Anima in the Flux/Chroma/Anima training page / 校验失败：底模是 Anima，请在 Flux/Chroma/Anima 训练页选择 Anima。"
 
         if model_type == ModelType.SDXL and training_type == "sd-lora":
