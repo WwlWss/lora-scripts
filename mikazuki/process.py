@@ -9,7 +9,6 @@ import toml
 from mikazuki.app.models import APIResponse
 from mikazuki.log import log
 from mikazuki.tasks import tm
-from mikazuki.launch_utils import base_dir_path
 
 
 ANIMA_LORA_ONLY_KEYS = {
@@ -28,6 +27,14 @@ ANIMA_LORA_ONLY_KEYS = {
     "base_weights_multiplier",
     "unet_lr",
     "text_encoder_lr",
+}
+
+ANIMA_OPTIONAL_FINETUNE_LRS = {
+    "self_attn_lr",
+    "cross_attn_lr",
+    "mlp_lr",
+    "mod_lr",
+    "llm_adapter_lr",
 }
 
 
@@ -57,6 +64,12 @@ def _resolve_anima_trainer(toml_path: str, trainer_file: str) -> str:
         for key in ANIMA_LORA_ONLY_KEYS:
             config.pop(key, None)
 
+        # Empty optional component-LR fields must be omitted, otherwise argparse's
+        # float conversion sees an empty string instead of the intended None value.
+        for key in ANIMA_OPTIONAL_FINETUNE_LRS:
+            if config.get(key) in (None, ""):
+                config.pop(key, None)
+
         trainer_file = "./sd-scripts/anima_train.py"
         if not os.path.exists(trainer_file):
             raise FileNotFoundError(
@@ -64,6 +77,10 @@ def _resolve_anima_trainer(toml_path: str, trainer_file: str) -> str:
             )
         log.info("Anima full finetune selected; using sd-scripts/anima_train.py")
     else:
+        # Component LRs belong to full finetune only. Remove stale values when a
+        # finetune preset was loaded and the user switched the form back to LoRA.
+        for key in ANIMA_OPTIONAL_FINETUNE_LRS | {"cpu_offload_checkpointing"}:
+            config.pop(key, None)
         log.info("Anima LoRA selected; using sd-scripts/anima_train_network.py")
 
     # `anima_training_mode` is a GUI-only routing key and must never reach sd-scripts.
