@@ -200,6 +200,13 @@ async def create_toml_file(request: Request):
                 return APIResponseFail(message=f"Anima 训练需要指定 {label} 路径。")
             if not os.path.exists(value):
                 return APIResponseFail(message=f"{label} 路径不存在: {value}")
+
+        # Optional Anima paths must be omitted instead of serialized as empty strings.
+        # sd-scripts treats a non-None empty path as a real directory and fails to load it.
+        for key in ("llm_adapter_path", "t5_tokenizer_path"):
+            if not config.get(key):
+                config.pop(key, None)
+
         config.setdefault("network_module", "networks.lora_anima")
 
     validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], effective_train_type)
@@ -292,7 +299,7 @@ async def pick_file(picker_type: str):
     if picker_type == "folder":
         coro = asyncio.to_thread(open_directory_selector, "")
     elif picker_type == "model-file":
-        file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt"), ("all files", "*.*")]
+        file_types = [("checkpoints", "*.safetensors;*.ckpt;*.pt;*.pth"), ("all files", "*.*")]
         coro = asyncio.to_thread(open_file_selector, "", "Select file", file_types)
 
     result = await coro
