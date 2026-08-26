@@ -51,6 +51,7 @@ trainer_mapping = {
     "flux-lora": "./scripts/dev/flux_train_network.py",
     "flux-finetune": "./scripts/dev/flux_train.py",
     "anima-lora": "./sd-scripts/anima_train_network.py",
+    "anima-finetune": "./sd-scripts/anima_train.py",
 }
 
 ANIMA_ONLY_KEYS = {
@@ -77,6 +78,15 @@ ANIMA_ONLY_KEYS = {
     "cuda_cudnn_benchmark",
 }
 
+ANIMA_FINETUNE_ONLY_KEYS = {
+    "self_attn_lr",
+    "cross_attn_lr",
+    "mlp_lr",
+    "mod_lr",
+    "llm_adapter_lr",
+    "cpu_offload_checkpointing",
+}
+
 FLUX_ONLY_KEYS = {
     "ae",
     "clip_l",
@@ -91,17 +101,55 @@ FLUX_ONLY_KEYS = {
 }
 
 
-def resolve_training_backend(config: dict, model_train_type: str) -> Tuple[str, str]:
-    """Resolve GUI model selection to a concrete trainer and strip incompatible parameters."""
-    model_type = config.get("model_type")
-    if model_train_type == "flux-lora" and model_type == "anima":
-        config.pop("model_type", None)
-        for key in FLUX_ONLY_KEYS:
-            config.pop(key, None)
-        return "anima-lora", trainer_mapping["anima-lora"]
-
-    for key in ANIMA_ONLY_KEYS:
+def _strip_keys(config: dict, keys) -> None:
+    for key in keys:
         config.pop(key, None)
+
+
+def _strip_network_training_keys(config: dict) -> None:
+    """Remove LoRA/network-only values before launching a full finetune."""
+    for key in list(config.keys()):
+        if key.startswith("network_") or key in {
+            "scale_weight_norms",
+            "enable_base_weight",
+            "base_weights",
+            "base_weights_multiplier",
+        }:
+            config.pop(key, None)
+
+
+def resolve_training_backend(config: dict, model_train_type: str) -> Tuple[str, str]:
+    """Resolve GUI model/mode selection to a concrete trainer.
+
+    The shared Flux/Chroma/Anima page is still loaded through the historical
+    `flux-lora` frontend route. Do not trust that route value for Anima: the
+    actual backend is selected from `model_type` + `anima_training_mode`.
+    """
+    model_type = config.get("model_type")
+    anima_training_mode = config.pop("anima_training_mode", None)
+
+    if model_type == "anima":
+        if anima_training_mode is None:
+            anima_training_mode = "finetune" if model_train_type == "anima-finetune" else "lora"
+        if anima_training_mode not in {"lora", "finetune"}:
+            raise ValueError(f"Unsupported Anima training mode: {anima_training_mode}")
+
+        config.pop("model_type", None)
+        _strip_keys(config, FLUX_ONLY_KEYS)
+
+        if anima_training_mode == "finetune":
+            _strip_network_training_keys(config)
+            for key in ANIMA_FINETUNE_ONLY_KEYS:
+                if config.get(key) in (None, ""):
+                    config.pop(key, None)
+            effective_train_type = "anima-finetune"
+        else:
+            _strip_keys(config, ANIMA_FINETUNE_ONLY_KEYS)
+            effective_train_type = "anima-lora"
+
+        return effective_train_type, trainer_mapping[effective_train_type]
+
+    _strip_keys(config, ANIMA_ONLY_KEYS | ANIMA_FINETUNE_ONLY_KEYS)
     return model_train_type, trainer_mapping[model_train_type]
 
 
@@ -183,13 +231,16 @@ async def create_toml_file(request: Request):
 
     suggest_cpu_threads = 8 if len(train_utils.get_total_images(config["train_data_dir"])) > 200 else 2
     model_train_type = config.pop("model_train_type", "sd-lora")
-    effective_train_type, trainer_file = resolve_training_backend(config, model_train_type)
+    try:
+        effective_train_type, trainer_file = resolve_training_backend(config, model_train_type)
+    except (KeyError, ValueError) as e:
+        return APIResponseFail(message=f"训练类型配置无效: {e}")
 
     if effective_train_type != "sdxl-finetune":
         if not train_utils.validate_data_dir(config["train_data_dir"]):
             return APIResponseFail(message="训练数据集路径不存在或没有图片，请检查目录。")
 
-    if effective_train_type == "anima-lora":
+    if effective_train_type in {"anima-lora", "anima-finetune"}:
         if not os.path.exists(trainer_file):
             return APIResponseFail(
                 message="Anima 训练脚本不存在。请运行 `git submodule update --init --recursive` 后重启 GUI。"
@@ -207,7 +258,8 @@ async def create_toml_file(request: Request):
             if not config.get(key):
                 config.pop(key, None)
 
-        config.setdefault("network_module", "networks.lora_anima")
+        if effective_train_type == "anima-lora":
+            config.setdefault("network_module", "networks.lora_anima")
 
     validated, message = train_utils.validate_model(config["pretrained_model_name_or_path"], effective_train_type)
     if not validated:

@@ -1,6 +1,5 @@
 Schema.intersect([
     Schema.object({
-        model_train_type: Schema.string().default("flux-lora").disabled().description("训练种类"),
         model_type: Schema.union(["flux", "chroma", "anima"]).default("flux").description("模型架构：FLUX / Chroma / Anima"),
         pretrained_model_name_or_path: Schema.string().role('filepicker', { type: "model-file" }).default("./sd-models/model.safetensors").description("底模路径；Anima 请选择 DiT safetensors"),
         resume: Schema.string().role('filepicker', { type: "folder" }).description("从某个 save_state 保存的中断状态继续训练"),
@@ -20,6 +19,23 @@ Schema.intersect([
             vae: Schema.string().role('filepicker', { type: "model-file" }).required().description("Anima VAE：Qwen-Image VAE safetensors / pth"),
             llm_adapter_path: Schema.string().role('filepicker', { type: "model-file" }).description("可选：独立 LLM Adapter 权重；留空时从 DiT 中读取"),
             t5_tokenizer_path: Schema.string().role('filepicker', { type: "folder" }).description("可选：T5 tokenizer 目录；留空使用 sd-scripts 内置配置"),
+        }),
+    ]),
+
+    Schema.union([
+        Schema.object({
+            model_type: Schema.union(["flux", "chroma"]).required(),
+            model_train_type: Schema.string().default("flux-lora").disabled().description("实际训练种类"),
+        }),
+        Schema.object({
+            model_type: Schema.const("anima").required(),
+            anima_training_mode: Schema.const("lora").required(),
+            model_train_type: Schema.string().default("anima-lora").disabled().description("实际训练种类"),
+        }),
+        Schema.object({
+            model_type: Schema.const("anima").required(),
+            anima_training_mode: Schema.const("finetune").required(),
+            model_train_type: Schema.string().default("anima-finetune").disabled().description("实际训练种类"),
         }),
     ]),
 
