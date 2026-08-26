@@ -20,10 +20,18 @@ class ModelType(Enum):
     SD3 = 4
     FLUX = 5
     LUMINA = 6
+    ANIMA = 7
     LoRA = 10
 
 
 MODEL_SIGNATURE = [
+    {
+        "type": ModelType.ANIMA,
+        "signature": [
+            "blocks.0.self_attn.q_proj.weight",
+            "llm_adapter.out_proj.weight",
+        ]
+    },
     {
         "type": ModelType.LUMINA,
         "signature": [
@@ -151,8 +159,23 @@ def validate_model(model_name: str, training_type: str = "sd-lora"):
         if model_type == ModelType.UNKNOWN:
             log.error(f"Can't match model type from {model_name}")
 
-        if model_type not in [ModelType.SD15, ModelType.SD2, ModelType.SD3, ModelType.SDXL, ModelType.FLUX, ModelType.LUMINA]:
-            return False, "Pretrained model is not a Stable Diffusion, Flux or Lumina checkpoint / 校验失败：底模不是 Stable Diffusion, Flux 或 Lumina 模型"
+        supported_types = [
+            ModelType.SD15,
+            ModelType.SD2,
+            ModelType.SD3,
+            ModelType.SDXL,
+            ModelType.FLUX,
+            ModelType.LUMINA,
+            ModelType.ANIMA,
+        ]
+        if model_type not in supported_types:
+            return False, "Pretrained model is not a supported SD/Flux/Lumina/Anima checkpoint / 校验失败：底模不是支持的 SD、Flux、Lumina 或 Anima 模型"
+
+        if training_type == "anima-lora" and model_type != ModelType.ANIMA:
+            return False, "Pretrained model is not Anima, but Anima LoRA training is selected / 校验失败：当前选择 Anima LoRA，但底模不是 Anima。"
+
+        if model_type == ModelType.ANIMA and training_type != "anima-lora":
+            return False, "Pretrained model is Anima. Select Anima in the Flux/Chroma/Anima training page / 校验失败：底模是 Anima，请在 Flux/Chroma/Anima 训练页选择 Anima。"
 
         if model_type == ModelType.SDXL and training_type == "sd-lora":
             return False, "Pretrained model is SDXL, but you are training with SD1.5 LoRA / 校验失败：你选择的是 SD1.5 LoRA 训练，但预训练模型是 SDXL。请前往专家模式选择正确的模型种类。"
