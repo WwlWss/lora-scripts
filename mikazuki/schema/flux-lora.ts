@@ -15,6 +15,7 @@ Schema.intersect([
         }),
         Schema.object({
             model_type: Schema.const("anima").required(),
+            anima_training_mode: Schema.union(["lora", "finetune"]).default("lora").description("Anima 训练方式：LoRA 或全参微调（全参直接训练 DiT，Qwen3 文本编码器按官方脚本保持冻结）"),
             qwen3: Schema.string().role('filepicker', { type: "model-file" }).required().description("Anima 文本编码器：Qwen3-0.6B safetensors 或本地 HuggingFace 模型目录"),
             vae: Schema.string().role('filepicker', { type: "model-file" }).required().description("Anima VAE：Qwen-Image VAE safetensors / pth"),
             llm_adapter_path: Schema.string().role('filepicker', { type: "model-file" }).description("可选：独立 LLM Adapter 权重；留空时从 DiT 中读取"),
@@ -47,7 +48,7 @@ Schema.intersect([
             vae_chunk_size: Schema.number().min(2).step(2).default(64).description("Qwen-Image VAE 空间分块大小；越小越省显存"),
             vae_disable_cache: Schema.boolean().default(true).description("关闭 Qwen-Image VAE 内部缓存以减少显存"),
             qwen_image_vae_2d: Schema.boolean().default(true).description("使用图像专用 2D Qwen-Image VAE；单图训练推荐，速度更快且显存更低"),
-            blocks_to_swap: Schema.number().min(0).max(34).step(1).default(0).description("将 DiT block 交换到 CPU；0 为关闭。28-block 模型最多 26"),
+            blocks_to_swap: Schema.number().min(0).max(30).step(1).default(0).description("将 DiT block 交换到 CPU；0 为关闭。28-block 模型最多 26，32-block 模型最多 30"),
             unsloth_offload_checkpointing: Schema.boolean().default(false).description("将 checkpoint activation 异步卸载到 CPU；不能和 blocks_to_swap 同时使用"),
             cuda_allow_tf32: Schema.boolean().default(true).description("Ampere 及更新显卡允许 TF32"),
         }).description("Anima 专用参数"),
@@ -70,11 +71,23 @@ Schema.intersect([
         train_batch_size: Schema.number().min(1).default(1).description("批量大小, 越高显存占用越高"),
         gradient_checkpointing: Schema.boolean().default(true).description("梯度检查点"),
         gradient_accumulation_steps: Schema.number().min(1).default(1).description("梯度累加步数"),
-        network_train_unet_only: Schema.boolean().default(true).description("仅训练主生成网络（Anima 中即 DiT）"),
-        network_train_text_encoder_only: Schema.boolean().default(false).description("仅训练文本编码器"),
     }).description("训练相关参数"),
 
     SHARED_SCHEMAS.LR_OPTIMIZER,
+
+    Schema.union([
+        Schema.object({
+            model_type: Schema.const("anima").required(),
+            anima_training_mode: Schema.const("finetune").required(),
+            self_attn_lr: Schema.string().description("Self-Attention 学习率；留空=总学习率，0=冻结该组件"),
+            cross_attn_lr: Schema.string().description("Cross-Attention 学习率；留空=总学习率，0=冻结该组件"),
+            mlp_lr: Schema.string().description("MLP 学习率；留空=总学习率，0=冻结该组件"),
+            mod_lr: Schema.string().description("AdaLN modulation 学习率；留空=总学习率，0=冻结该组件"),
+            llm_adapter_lr: Schema.string().description("LLM Adapter 学习率；留空=总学习率，0=冻结 Adapter"),
+            cpu_offload_checkpointing: Schema.boolean().default(false).description("将 gradient-checkpoint activation 卸载到 CPU；不能与 blocks_to_swap / unsloth_offload_checkpointing 同时使用"),
+        }).description("Anima 全参微调分组件学习率"),
+        Schema.object({}),
+    ]),
 
     Schema.union([
         Schema.intersect([
@@ -96,6 +109,7 @@ Schema.intersect([
         Schema.intersect([
             Schema.object({
                 model_type: Schema.const("anima").required(),
+                anima_training_mode: Schema.const("lora").required(),
                 network_module: Schema.string().default("networks.lora_anima").disabled().description("Anima LoRA 网络模块"),
                 network_weights: Schema.string().role('filepicker').description("从已有的 Anima LoRA 上继续训练"),
                 network_dim: Schema.number().min(1).default(8).description("LoRA rank；官方示例为 8，可按数据规模提高"),
@@ -104,9 +118,15 @@ Schema.intersect([
                 scale_weight_norms: Schema.number().step(0.01).min(0).description("最大范数正则化"),
                 network_args_custom: Schema.array(String).role('table').description("Anima network_args；可填写 train_llm_adapter=True、network_reg_dims=...、network_reg_lrs=... 等，一行一个"),
                 enable_base_weight: Schema.boolean().default(false).description('启用基础权重（差异炼丹）'),
+                network_train_unet_only: Schema.boolean().default(true).description("仅训练 Anima DiT 的 LoRA"),
+                network_train_text_encoder_only: Schema.boolean().default(false).description("仅训练文本编码器网络；Anima 通常保持关闭"),
             }).description("Anima LoRA 网络设置"),
             SHARED_SCHEMAS.NETWORK_OPTION_BASEWEIGHT,
         ]),
+        Schema.object({
+            model_type: Schema.const("anima").required(),
+            anima_training_mode: Schema.const("finetune").required(),
+        }).description("Anima 全参微调直接训练 DiT，不使用 LoRA network 参数"),
     ]),
 
     SHARED_SCHEMAS.PREVIEW_IMAGE,
