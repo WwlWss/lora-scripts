@@ -119,24 +119,30 @@ Schema.intersect([
     SHARED_SCHEMAS.OTHER,
 
     Schema.union([
-        Schema.object(
-            UpdateSchema(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH, {
-                fp8_base: Schema.boolean().default(true).description("对基础模型使用 FP8 精度"),
-                fp8_base_unet: Schema.boolean().description("仅对 U-Net 使用 FP8 精度（CLIP-L不使用）"),
-                sdpa: Schema.boolean().default(true).description("启用 sdpa"),
-                cache_text_encoder_outputs: Schema.boolean().default(true).description("缓存文本编码器输出；使用时需要关闭 shuffle_caption"),
-                cache_text_encoder_outputs_to_disk: Schema.boolean().default(true).description("缓存文本编码器输出到磁盘"),
-            }, ["xformers"])
-        ).description("Flux / Chroma 速度优化选项"),
-        Schema.object(
-            UpdateSchema(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH, {
-                cache_latents: Schema.boolean().default(true).description("缓存 Qwen-Image VAE latent"),
-                cache_latents_to_disk: Schema.boolean().default(true).description("将 latent 缓存到磁盘"),
-                cache_text_encoder_outputs: Schema.boolean().default(true).description("缓存 Qwen3 输出以释放显存；启用后需关闭 shuffle_caption"),
-                cache_text_encoder_outputs_to_disk: Schema.boolean().default(true).description("将 Qwen3 输出缓存到磁盘"),
-                vae_batch_size: Schema.number().min(1).default(1).description("VAE 编码批量大小"),
-            }, ["xformers", "sdpa"])
-        ).description("Anima 速度与缓存选项"),
+        Schema.intersect([
+            Schema.object({ model_type: Schema.union(["flux", "chroma"]).required() }),
+            Schema.object(
+                UpdateSchema(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH, {
+                    fp8_base: Schema.boolean().default(true).description("对基础模型使用 FP8 精度"),
+                    fp8_base_unet: Schema.boolean().description("仅对 U-Net 使用 FP8 精度（CLIP-L不使用）"),
+                    sdpa: Schema.boolean().default(true).description("启用 sdpa"),
+                    cache_text_encoder_outputs: Schema.boolean().default(true).description("缓存文本编码器输出；使用时需要关闭 shuffle_caption"),
+                    cache_text_encoder_outputs_to_disk: Schema.boolean().default(true).description("缓存文本编码器输出到磁盘"),
+                }, ["xformers"])
+            ).description("Flux / Chroma 速度优化选项"),
+        ]),
+        Schema.intersect([
+            Schema.object({ model_type: Schema.const("anima").required() }),
+            Schema.object(
+                UpdateSchema(SHARED_SCHEMAS.RAW.PRECISION_CACHE_BATCH, {
+                    cache_latents: Schema.boolean().default(true).description("缓存 Qwen-Image VAE latent"),
+                    cache_latents_to_disk: Schema.boolean().default(true).description("将 latent 缓存到磁盘"),
+                    cache_text_encoder_outputs: Schema.boolean().default(true).description("缓存 Qwen3 输出以释放显存；启用后需关闭 shuffle_caption"),
+                    cache_text_encoder_outputs_to_disk: Schema.boolean().default(true).description("将 Qwen3 输出缓存到磁盘"),
+                    vae_batch_size: Schema.number().min(1).default(1).description("VAE 编码批量大小"),
+                }, ["xformers", "sdpa"])
+            ).description("Anima 速度与缓存选项"),
+        ]),
     ]),
 
     SHARED_SCHEMAS.DISTRIBUTED_TRAINING
