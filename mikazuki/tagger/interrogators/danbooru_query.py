@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 from PIL import Image
-from huggingface_hub import hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download
 
 from mikazuki.tagger.interrogators.base import Interrogator
 
@@ -15,8 +15,27 @@ class DanbooruTagQueryInterrogator(Interrogator):
         self.variant = variant
         self.repo_id = repo_id
 
+    def _resolve_variant(self) -> str:
+        files = HfApi().list_repo_files(self.repo_id, repo_type="model")
+        variants = sorted({
+            path.split("/")[1]
+            for path in files
+            if path.startswith("models/") and path.count("/") >= 2
+        })
+        if self.variant in variants:
+            return self.variant
+        needle = self.variant.lower().replace("/", "")
+        matches = [v for v in variants if needle in v.lower().replace("/", "")]
+        if not matches:
+            raise FileNotFoundError(
+                f"No DanbooruTagQuery variant matching '{self.variant}' found in {self.repo_id}. "
+                f"Available variants: {', '.join(variants)}"
+            )
+        return matches[0]
+
     def download(self):
-        prefix = f"models/{self.variant}"
+        variant = self._resolve_variant()
+        prefix = f"models/{variant}"
         model_path = Path(hf_hub_download(repo_id=self.repo_id, filename=f"{prefix}/model.onnx"))
         sidecars = {}
         for filename in ("config.json", "tag_to_id.json", "tag_category.json"):
