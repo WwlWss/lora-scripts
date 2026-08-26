@@ -52,15 +52,22 @@ def prepare_git():
 def prepare_submodules():
     frontend_path = base_dir_path() / "frontend" / "dist"
     tag_editor_path = base_dir_path() / "mikazuki" / "dataset-tag-editor" / "scripts"
+    anima_trainer_path = base_dir_path() / "sd-scripts" / "anima_train_network.py"
 
-    if not os.path.exists(frontend_path) or not os.path.exists(tag_editor_path):
+    required_paths = [frontend_path, tag_editor_path, anima_trainer_path]
+    if not all(os.path.exists(path) for path in required_paths):
         log.info("submodule not found, try clone...")
         log.info("checking git installation...")
         if not prepare_git():
             log.error("git not found, please install git first")
             sys.exit(1)
-        subprocess.run(["git", "submodule", "init"])
-        subprocess.run(["git", "submodule", "update"])
+        subprocess.run(["git", "submodule", "update", "--init", "--recursive"], check=False)
+
+    if not os.path.exists(anima_trainer_path):
+        log.warning(
+            "Anima trainer submodule is unavailable. Anima training will not work until "
+            "`git submodule update --init --recursive` succeeds."
+        )
 
 
 def git_tag(path: str) -> str:
@@ -115,7 +122,7 @@ stderr: {result.stderr.decode(encoding="utf8", errors="ignore") if len(result.st
 
 def is_installed(package, friendly: str = None):
     #
-    # This function was adapted from code written by vladimandic: https://github.com/vladmandic/automatic/commits/master
+    # This function was adapted from code written by vladmandic: https://github.com/vladmandic/automatic/commits/master
     #
 
     # Remove brackets and their contents from the line using regular expressions
