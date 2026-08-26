@@ -17,6 +17,9 @@ from mikazuki.tagger import dbimutils, format
 from mikazuki.tagger.interrogators.base import Interrogator
 from mikazuki.tagger.interrogators.wd14 import WaifuDiffusionInterrogator
 from mikazuki.tagger.interrogators.cl import CLTaggerInterrogator
+from mikazuki.tagger.interrogators.animetimm import AnimeTimmInterrogator
+from mikazuki.tagger.interrogators.danbooru_query import DanbooruTagQueryInterrogator
+from mikazuki.tagger.interrogators.pixai import PixAITaggerInterrogator
 
 tag_escape_pattern = re.compile(r'([\\()])')
 
@@ -64,6 +67,30 @@ available_interrogators = {
         repo_id='cella110n/cl_tagger',
         model_path='cl_tagger_1_01/model.onnx',
         tag_mapping_path='cl_tagger_1_01/tag_mapping.json',
+    ),
+    'animetimm-caformer-m36-dbv4': AnimeTimmInterrogator(
+        'AnimeTimm DBv4 CAFormer M36',
+        repo_id='animetimm/caformer_m36.dbv4-full',
+    ),
+    'animetimm-caformer-b36-dbv4': AnimeTimmInterrogator(
+        'AnimeTimm DBv4 CAFormer B36',
+        repo_id='animetimm/caformer_b36.dbv4-full',
+    ),
+    'animetimm-eva02-large-dbv4': AnimeTimmInterrogator(
+        'AnimeTimm DBv4 EVA02 Large 448',
+        repo_id='animetimm/eva02_large_patch14_448.dbv4-full',
+    ),
+    'danbooru-tag-query-b16': DanbooruTagQueryInterrogator(
+        'DanbooruTagQuery B/16',
+        variant='DanbooruTagQuery_b16_448x448',
+    ),
+    'danbooru-tag-query-l16': DanbooruTagQueryInterrogator(
+        'DanbooruTagQuery L/16',
+        variant='DanbooruTagQuery_l16_448x448',
+    ),
+    'pixai-tagger-v0.9': PixAITaggerInterrogator(
+        'PixAI Tagger v0.9',
+        repo_id='deepghs/pixai-tagger-v0.9-onnx',
     ),
 }
 
