@@ -4,10 +4,11 @@ import os
 import sys
 import webbrowser
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException
 
@@ -21,6 +22,9 @@ from mikazuki.utils.devices import check_torch_gpu
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
 
+FRONTEND_DIST_DIR = Path("./frontend/dist")
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
+
 
 class SPAStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
@@ -31,6 +35,33 @@ class SPAStaticFiles(StaticFiles):
                 return await super().get_response("index.html", scope)
             else:
                 raise ex
+
+
+def _safe_frontend_path(base_dir: Path, relative_path: str) -> Path:
+    """Resolve a frontend path while preventing traversal outside the dist directory."""
+    base = base_dir.resolve()
+    target = (base / relative_path).resolve()
+    if target != base and base not in target.parents:
+        raise HTTPException(status_code=404)
+    return target
+
+
+def _patch_training_page_js(asset_name: str, content: str) -> str:
+    """Expose Anima in the prebuilt VuePress frontend without modifying the submodule.
+
+    The frontend repository only ships compiled assets. The actual training form is
+    already loaded dynamically from the backend schema, so all we need here is a
+    discoverable name for the existing Flux/Chroma/Anima expert route.
+    """
+    if asset_name.startswith("app.") and asset_name.endswith(".js"):
+        content = content.replace(
+            '{"text":"Flux","link":"/lora/flux.md"}',
+            '{"text":"Anima / Flux / Chroma","link":"/lora/flux.md"}',
+        )
+        content = content.replace("Flux LoRA ", "Anima / Flux / Chroma ")
+    elif asset_name.startswith("flux.html.") and asset_name.endswith(".js"):
+        content = content.replace("Flux LoRA ", "Anima / Flux / Chroma ")
+    return content
 
 
 async def app_startup():
@@ -81,11 +112,40 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/")
 async def index():
-    return FileResponse("./frontend/dist/index.html")
+    return FileResponse(FRONTEND_DIST_DIR / "index.html")
 
 
 @app.get("/favicon.ico", response_class=FileResponse)
 async def favicon():
     return FileResponse("assets/favicon.ico")
+
+
+@app.get("/assets/{asset_name:path}")
+async def frontend_asset(asset_name: str):
+    """Serve frontend assets, patching only the compiled training-page navigation text."""
+    asset_path = _safe_frontend_path(FRONTEND_ASSETS_DIR, asset_name)
+    if not asset_path.is_file():
+        raise HTTPException(status_code=404)
+
+    if asset_name.endswith(".js") and (
+        asset_name.startswith("app.") or asset_name.startswith("flux.html.")
+    ):
+        content = asset_path.read_text(encoding="utf-8")
+        content = _patch_training_page_js(asset_name, content)
+        return Response(content=content, media_type="application/javascript")
+
+    return FileResponse(asset_path)
+
+
+@app.get("/lora/flux.html")
+async def flux_training_page():
+    """Rename the shared Flux/Chroma/Anima page in the initial server-rendered HTML."""
+    page_path = FRONTEND_DIST_DIR / "lora" / "flux.html"
+    if not page_path.is_file():
+        raise HTTPException(status_code=404)
+    content = page_path.read_text(encoding="utf-8")
+    content = content.replace("Flux LoRA 训练 专家模式", "Anima / Flux / Chroma 训练 专家模式")
+    return HTMLResponse(content=content)
+
 
 app.mount("/", SPAStaticFiles(directory="frontend/dist", html=True), name="static")
