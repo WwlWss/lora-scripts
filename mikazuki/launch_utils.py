@@ -7,11 +7,10 @@ import subprocess
 import sys
 import socket
 import sysconfig
+from importlib import metadata
 from typing import List
 from pathlib import Path
 from typing import Optional
-
-import pkg_resources
 
 from mikazuki.log import log
 
@@ -120,6 +119,20 @@ stderr: {result.stderr.decode(encoding="utf8", errors="ignore") if len(result.st
     return result.stdout.decode(encoding="utf8", errors="ignore")
 
 
+def _installed_version(package_name: str) -> Optional[str]:
+    candidates = (
+        package_name,
+        package_name.lower(),
+        package_name.replace('_', '-'),
+    )
+    for candidate in dict.fromkeys(candidates):
+        try:
+            return metadata.version(candidate)
+        except metadata.PackageNotFoundError:
+            continue
+    return None
+
+
 def is_installed(package, friendly: str = None):
     #
     # This function was adapted from code written by vladmandic: https://github.com/vladmandic/automatic/commits/master
@@ -150,14 +163,9 @@ def is_installed(package, friendly: str = None):
             else:
                 pkg_name, pkg_version = pkg.strip(), None
 
-            spec = pkg_resources.working_set.by_key.get(pkg_name, None)
-            if spec is None:
-                spec = pkg_resources.working_set.by_key.get(pkg_name.lower(), None)
-            if spec is None:
-                spec = pkg_resources.working_set.by_key.get(pkg_name.replace('_', '-'), None)
+            version = _installed_version(pkg_name)
 
-            if spec is not None:
-                version = pkg_resources.get_distribution(pkg_name).version
+            if version is not None:
                 # log.debug(f'Package version found: {pkg_name} {version}')
 
                 if pkg_version is not None:
