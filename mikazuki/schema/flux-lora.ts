@@ -14,7 +14,7 @@ Schema.intersect([
         }),
         Schema.object({
             model_type: Schema.const("anima").required(),
-            anima_training_mode: Schema.union(["lora", "finetune"]).default("lora").description("Anima 训练方式：LoRA 或全参微调（全参直接训练 DiT，Qwen3 文本编码器保持冻结）"),
+            anima_training_mode: Schema.union(["lora", "finetune"]).default("lora").description("Anima 训练方式：LoRA 或全参微调（实际 trainer 由后端唯一根据此字段选择）"),
             qwen3: Schema.string().role('filepicker', { type: "model-file" }).description("Anima 文本编码器：Qwen3-0.6B safetensors 或本地 HuggingFace 模型目录；启动训练时后端会校验必填"),
             vae: Schema.string().role('filepicker', { type: "model-file" }).description("Anima VAE：Qwen-Image VAE safetensors / pth；启动训练时后端会校验必填"),
             llm_adapter_path: Schema.string().role('filepicker', { type: "model-file" }).description("可选：独立 LLM Adapter 权重；留空时从 DiT 中读取"),
@@ -23,20 +23,13 @@ Schema.intersect([
         Schema.object({}),
     ]),
 
+    // Legacy frontend caches disabled default fields when a union branch changes.
+    // Therefore model_train_type is exposed only for Flux/Chroma. For Anima the
+    // backend derives anima-lora/anima-finetune exclusively from anima_training_mode.
     Schema.union([
         Schema.object({
             model_type: Schema.union(["flux", "chroma"]).required(),
             model_train_type: Schema.string().default("flux-lora").disabled().description("实际训练种类"),
-        }),
-        Schema.object({
-            model_type: Schema.const("anima").required(),
-            anima_training_mode: Schema.const("lora").required(),
-            model_train_type: Schema.string().default("anima-lora").disabled().description("实际训练种类"),
-        }),
-        Schema.object({
-            model_type: Schema.const("anima").required(),
-            anima_training_mode: Schema.const("finetune").required(),
-            model_train_type: Schema.string().default("anima-finetune").disabled().description("实际训练种类"),
         }),
         Schema.object({}),
     ]),
@@ -139,17 +132,18 @@ Schema.intersect([
         Schema.object({}),
     ]),
 
+    // Keep the finetune controls attached to Anima itself instead of a mode-dependent
+    // union. The backend removes these fields automatically for LoRA.
     Schema.union([
         Schema.object({
             model_type: Schema.const("anima").required(),
-            anima_training_mode: Schema.const("finetune").required(),
-            self_attn_lr: Schema.string().description("Self-Attention 学习率；留空=总学习率，0=冻结该组件"),
-            cross_attn_lr: Schema.string().description("Cross-Attention 学习率；留空=总学习率，0=冻结该组件"),
-            mlp_lr: Schema.string().description("MLP 学习率；留空=总学习率，0=冻结该组件"),
-            mod_lr: Schema.string().description("AdaLN modulation 学习率；留空=总学习率，0=冻结该组件"),
-            llm_adapter_lr: Schema.string().description("LLM Adapter 学习率；留空=总学习率，0=冻结 Adapter"),
-            cpu_offload_checkpointing: Schema.boolean().default(false).description("将 gradient-checkpoint activation 卸载到 CPU；不能与 blocks_to_swap / unsloth_offload_checkpointing 同时使用"),
-        }).description("Anima 全参微调分组件学习率"),
+            self_attn_lr: Schema.string().description("Self-Attention 学习率；仅 finetune 使用；留空=总学习率，0=冻结该组件"),
+            cross_attn_lr: Schema.string().description("Cross-Attention 学习率；仅 finetune 使用；留空=总学习率，0=冻结该组件"),
+            mlp_lr: Schema.string().description("MLP 学习率；仅 finetune 使用；留空=总学习率，0=冻结该组件"),
+            mod_lr: Schema.string().description("AdaLN modulation 学习率；仅 finetune 使用；留空=总学习率，0=冻结该组件"),
+            llm_adapter_lr: Schema.string().description("LLM Adapter 学习率；仅 finetune 使用；留空=总学习率，0=冻结 Adapter"),
+            cpu_offload_checkpointing: Schema.boolean().description("仅 finetune 使用；将 gradient-checkpoint activation 卸载到 CPU；不能与 blocks_to_swap / unsloth_offload_checkpointing 同时使用"),
+        }).description("Anima 全参微调分组件学习率（LoRA 模式下后端自动忽略）"),
         Schema.object({}),
     ]),
 
@@ -170,22 +164,20 @@ Schema.intersect([
             SHARED_SCHEMAS.LYCORIS_LOKR,
             SHARED_SCHEMAS.NETWORK_OPTION_BASEWEIGHT,
         ]),
+        // Do not gate these fields on anima_training_mode. The legacy frontend may
+        // resolve this segment before the mode default is materialized and would then
+        // permanently choose the empty branch. Finetune strips network_* in backend.
         Schema.object({
             model_type: Schema.const("anima").required(),
-            anima_training_mode: Schema.const("lora").required(),
-            network_module: Schema.string().default("networks.lora_anima").disabled().description("Anima LoRA 网络模块"),
-            network_weights: Schema.string().role('filepicker').description("从已有的 Anima LoRA 上继续训练"),
-            network_dim: Schema.number().min(1).default(8).description("LoRA rank；官方示例为 8，风格 LoRA 可按容量需要提高到 16/32"),
-            network_alpha: Schema.number().min(1).default(1).description("LoRA alpha；官方示例为 1。提高 alpha 时应重新评估学习率"),
-            network_dropout: Schema.number().min(0).max(1).step(0.01).default(0).description("LoRA dropout"),
-            scale_weight_norms: Schema.number().step(0.01).min(0).description("最大范数正则化"),
-            network_args_custom: Schema.array(String).role('table').description("Anima network_args；可填写 train_llm_adapter=True、network_reg_dims=...、network_reg_lrs=... 等，一行一个"),
-            network_train_unet_only: Schema.boolean().default(true).disabled().description("固定为仅训练 Anima DiT LoRA；字段名沿用 sd-scripts 历史 U-Net 命名"),
-        }).description("Anima LoRA 网络设置"),
-        Schema.object({
-            model_type: Schema.const("anima").required(),
-            anima_training_mode: Schema.const("finetune").required(),
-        }).description("Anima 全参微调直接训练 DiT，不使用 LoRA network 参数"),
+            network_module: Schema.string().default("networks.lora_anima").disabled().description("Anima LoRA 网络模块；finetune 模式下后端自动忽略"),
+            network_weights: Schema.string().role('filepicker').description("从已有的 Anima LoRA 上继续训练；仅 LoRA 使用"),
+            network_dim: Schema.number().min(1).default(8).description("LoRA rank；仅 LoRA 使用；官方示例为 8，风格 LoRA 可按容量需要提高到 16/32"),
+            network_alpha: Schema.number().min(1).default(1).description("LoRA alpha；仅 LoRA 使用；官方示例为 1。提高 alpha 时应重新评估学习率"),
+            network_dropout: Schema.number().min(0).max(1).step(0.01).default(0).description("LoRA dropout；仅 LoRA 使用"),
+            scale_weight_norms: Schema.number().step(0.01).min(0).description("最大范数正则化；仅 LoRA 使用"),
+            network_args_custom: Schema.array(String).role('table').description("Anima network_args；仅 LoRA 使用；可填写 train_llm_adapter=True、network_reg_dims=...、network_reg_lrs=... 等，一行一个"),
+            network_train_unet_only: Schema.boolean().default(true).disabled().description("固定为仅训练 Anima DiT LoRA；字段名沿用 sd-scripts 历史 U-Net 命名；finetune 时后端自动忽略"),
+        }).description("Anima LoRA 网络设置（finetune 模式下后端自动忽略）"),
         Schema.object({}),
     ]),
 
