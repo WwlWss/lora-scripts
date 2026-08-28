@@ -92,8 +92,8 @@ Schema.intersect([
         }).description("训练相关参数"),
         Schema.object({
             model_type: Schema.const("anima").required(),
-            max_train_steps: Schema.number().min(1).default(3000).description("最大优化器步数；适合使用 repeat 控制采样权重的数据集。设置后无需依赖完整 epoch"),
-            max_train_epochs: Schema.number().min(1).description("可选：最大 epoch。建议与 max_train_steps 二选一；同时填写时后端优先保留 max_train_steps"),
+            max_train_steps: Schema.number().min(1).default(3000).description("最大优化器步数；适合使用 repeat 控制采样权重的数据集"),
+            max_train_epochs: Schema.number().min(1).description("可选：最大 epoch。建议与 max_train_steps 二选一；同时填写时后端优先 max_train_steps"),
             save_every_n_steps: Schema.number().min(1).default(250).description("每 N step 保存一次模型；使用 max_train_steps 时推荐设置"),
             train_batch_size: Schema.number().min(1).default(1).description("批量大小；优先在显存允许时提高真实 batch，再考虑梯度累积"),
             gradient_checkpointing: Schema.boolean().default(true).description("梯度检查点；显著降低显存占用"),
@@ -102,11 +102,14 @@ Schema.intersect([
     ]),
 
     Schema.union([
-        SHARED_SCHEMAS.LR_OPTIMIZER,
+        Schema.intersect([
+            Schema.object({ model_type: Schema.union(["flux", "chroma"]).required() }),
+            SHARED_SCHEMAS.LR_OPTIMIZER,
+        ]),
         Schema.intersect([
             Schema.object({
                 model_type: Schema.const("anima").required(),
-                learning_rate: Schema.string().default("5e-5").description("Anima 总学习率。LoRA 模式下用于 DiT LoRA；不再显示旧 U-Net / 文本编码器学习率"),
+                learning_rate: Schema.string().default("5e-5").description("Anima 总学习率。LoRA 模式下用于 DiT LoRA；不再使用旧 U-Net / 文本编码器学习率"),
                 lr_scheduler: Schema.union(["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"]).default("constant").description("学习率调度器；风格 LoRA 首轮测试推荐 constant"),
                 lr_warmup_steps: Schema.number().default(0).description("学习率预热步数"),
                 loss_type: Schema.union(["l1", "l2", "huber", "smooth_l1"]).default("l2").description("损失函数类型"),
@@ -184,9 +187,10 @@ Schema.intersect([
     SHARED_SCHEMAS.LOG_SETTINGS,
 
     Schema.union([
-        Schema.object({
-            model_type: Schema.union(["flux", "chroma"]).required(),
-        }).description("Flux / Chroma caption 条件"),
+        Schema.intersect([
+            Schema.object({ model_type: Schema.union(["flux", "chroma"]).required() }),
+            Schema.object(UpdateSchema(SHARED_SCHEMAS.RAW.CAPTION_SETTINGS, {}, ["max_token_length"])).description("caption（Tag）选项"),
+        ]),
         Schema.object({
             model_type: Schema.const("anima").required(),
             caption_extension: Schema.string().default(".txt").description("Tag 文件扩展名"),
@@ -198,19 +202,13 @@ Schema.intersect([
             caption_tag_dropout_rate: Schema.number().min(0).max(1).step(0.01).description("按 tag 随机丢弃；缓存 Qwen3 输出时不能启用"),
         }).description("Anima caption（Tag）选项"),
     ]),
-    Schema.union([
-        Schema.object({ model_type: Schema.union(["flux", "chroma"]).required() }),
-        Schema.object({ model_type: Schema.const("anima").required() }),
-    ]),
 
     Schema.union([
         Schema.intersect([
             Schema.object({ model_type: Schema.union(["flux", "chroma"]).required() }),
             SHARED_SCHEMAS.NOISE_SETTINGS,
         ]),
-        Schema.object({
-            model_type: Schema.const("anima").required(),
-        }).description("Anima 使用 Rectified Flow；不显示旧 SD noise_offset / multires noise 选项"),
+        Schema.object({ model_type: Schema.const("anima").required() }).description("Anima 使用 Rectified Flow；不显示旧 SD noise_offset / multires noise 选项"),
     ]),
 
     SHARED_SCHEMAS.DATA_ENCHANCEMENT,
