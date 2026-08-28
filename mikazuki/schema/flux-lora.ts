@@ -15,8 +15,8 @@ Schema.intersect([
         Schema.object({
             model_type: Schema.const("anima").required(),
             anima_training_mode: Schema.union(["lora", "finetune"]).default("lora").description("Anima 训练方式：LoRA 或全参微调（全参直接训练 DiT，Qwen3 文本编码器保持冻结）"),
-            qwen3: Schema.string().role('filepicker', { type: "model-file" }).description("Anima 文本编码器：Qwen3-0.6B safetensors 或本地 HuggingFace 模型目录"),
-            vae: Schema.string().role('filepicker', { type: "model-file" }).description("Anima VAE：Qwen-Image VAE safetensors / pth"),
+            qwen3: Schema.string().role('filepicker', { type: "model-file" }).description("Anima 文本编码器：Qwen3-0.6B safetensors 或本地 HuggingFace 模型目录；启动训练时后端会校验必填"),
+            vae: Schema.string().role('filepicker', { type: "model-file" }).description("Anima VAE：Qwen-Image VAE safetensors / pth；启动训练时后端会校验必填"),
             llm_adapter_path: Schema.string().role('filepicker', { type: "model-file" }).description("可选：独立 LLM Adapter 权重；留空时从 DiT 中读取"),
             t5_tokenizer_path: Schema.string().role('filepicker', { type: "folder" }).description("可选：T5 tokenizer 目录；留空使用 sd-scripts 内置配置"),
         }),
@@ -70,6 +70,7 @@ Schema.intersect([
             unsloth_offload_checkpointing: Schema.boolean().default(false).description("将 checkpoint activation 异步卸载到 CPU；不能和 blocks_to_swap / cpu_offload_checkpointing 同时使用"),
             cuda_allow_tf32: Schema.boolean().default(true).description("Ampere 及更新显卡允许 TF32；旧显卡保持开启也不会获得 TF32 加速"),
         }).description("Anima 专用参数"),
+        Schema.object({}),
     ]),
 
     Schema.object(
@@ -101,6 +102,7 @@ Schema.intersect([
             gradient_checkpointing: Schema.boolean().default(true).description("梯度检查点；显著降低显存占用"),
             gradient_accumulation_steps: Schema.number().min(1).default(1).description("梯度累加步数；显存不足以提高真实 batch 时使用"),
         }).description("Anima 训练相关参数"),
+        Schema.object({}),
     ]),
 
     Schema.union([
@@ -134,6 +136,7 @@ Schema.intersect([
                 Schema.object({}),
             ]),
         ]),
+        Schema.object({}),
     ]),
 
     Schema.union([
@@ -183,6 +186,7 @@ Schema.intersect([
             model_type: Schema.const("anima").required(),
             anima_training_mode: Schema.const("finetune").required(),
         }).description("Anima 全参微调直接训练 DiT，不使用 LoRA network 参数"),
+        Schema.object({}),
     ]),
 
     SHARED_SCHEMAS.PREVIEW_IMAGE,
@@ -203,6 +207,7 @@ Schema.intersect([
             caption_dropout_every_n_epochs: Schema.number().min(0).max(100).step(1).description("每 N 个 epoch 丢弃全部标签"),
             caption_tag_dropout_rate: Schema.number().min(0).max(1).step(0.01).description("按 tag 随机丢弃；缓存 Qwen3 输出时不能启用"),
         }).description("Anima caption（Tag）选项"),
+        Schema.object({}),
     ]),
 
     Schema.union([
@@ -211,6 +216,7 @@ Schema.intersect([
             SHARED_SCHEMAS.NOISE_SETTINGS,
         ]),
         Schema.object({ model_type: Schema.const("anima").required() }).description("Anima 使用 Rectified Flow；不显示旧 SD noise_offset / multires noise 选项"),
+        Schema.object({}),
     ]),
 
     SHARED_SCHEMAS.DATA_ENCHANCEMENT,
@@ -225,6 +231,7 @@ Schema.intersect([
             seed: Schema.number().default(1337).description("随机种子"),
             ui_custom_params: Schema.string().role('textarea').description("危险：自定义 TOML 参数会覆盖界面参数。仅用于 sd-scripts 已支持但 GUI 尚未暴露的参数"),
         }).description("Anima 其他设置"),
+        Schema.object({}),
     ]),
 
     Schema.union([
@@ -254,6 +261,7 @@ Schema.intersect([
             persistent_data_loader_workers: Schema.boolean().default(true).description("保留加载训练集的 worker，减少 epoch 之间的停顿"),
             vae_batch_size: Schema.number().min(1).default(1).description("VAE 编码批量大小"),
         }).description("Anima 速度与缓存选项"),
+        Schema.object({}),
     ]),
 
     SHARED_SCHEMAS.DISTRIBUTED_TRAINING
