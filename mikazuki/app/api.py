@@ -87,6 +87,20 @@ ANIMA_FINETUNE_ONLY_KEYS = {
     "cpu_offload_checkpointing",
 }
 
+# Old SD/SDXL fields that are either meaningless or actively misleading for
+# Anima's DiT / Rectified Flow path. Keep them out even when an older preset or
+# ui_custom_params injects them.
+ANIMA_LEGACY_KEYS = {
+    "unet_lr",
+    "text_encoder_lr",
+    "clip_skip",
+    "noise_offset",
+    "multires_noise_iterations",
+    "multires_noise_discount",
+    "min_snr_gamma",
+    "weighted_captions",
+}
+
 FLUX_ONLY_KEYS = {
     "ae",
     "clip_l",
@@ -118,6 +132,38 @@ def _strip_network_training_keys(config: dict) -> None:
             config.pop(key, None)
 
 
+def _normalize_anima_common_config(config: dict) -> None:
+    """Normalize shared GUI values to the semantics expected by sd-scripts Anima."""
+    _strip_keys(config, FLUX_ONLY_KEYS | ANIMA_LEGACY_KEYS)
+
+    # Step-based training is much more useful for heavily repeated datasets.
+    # Avoid passing both limits because max_train_epochs can recalculate the
+    # effective step count in sd-scripts.
+    if config.get("max_train_steps") not in (None, "", 0):
+        config.pop("max_train_epochs", None)
+
+    # Anima's xformers implementation requires split attention.
+    if config.get("attn_mode") == "xformers":
+        config["split_attn"] = True
+
+    blocks_to_swap = int(config.get("blocks_to_swap") or 0)
+    unsloth_offload = bool(config.get("unsloth_offload_checkpointing"))
+    cpu_offload = bool(config.get("cpu_offload_checkpointing"))
+
+    if blocks_to_swap > 0 and unsloth_offload:
+        raise ValueError("Anima: blocks_to_swap 不能与 unsloth_offload_checkpointing 同时启用")
+    if blocks_to_swap > 0 and cpu_offload:
+        raise ValueError("Anima: blocks_to_swap 不能与 cpu_offload_checkpointing 同时启用")
+    if unsloth_offload and cpu_offload:
+        raise ValueError("Anima: unsloth_offload_checkpointing 不能与 cpu_offload_checkpointing 同时启用")
+
+    if config.get("cache_text_encoder_outputs"):
+        if config.get("shuffle_caption"):
+            raise ValueError("Anima: 缓存 Qwen3 输出时必须关闭 shuffle_caption")
+        if float(config.get("caption_tag_dropout_rate") or 0) > 0:
+            raise ValueError("Anima: 缓存 Qwen3 输出时不能启用 caption_tag_dropout_rate")
+
+
 def resolve_training_backend(config: dict, model_train_type: str) -> Tuple[str, str]:
     """Resolve GUI model/mode selection to a concrete trainer.
 
@@ -135,7 +181,7 @@ def resolve_training_backend(config: dict, model_train_type: str) -> Tuple[str, 
             raise ValueError(f"Unsupported Anima training mode: {anima_training_mode}")
 
         config.pop("model_type", None)
-        _strip_keys(config, FLUX_ONLY_KEYS)
+        _normalize_anima_common_config(config)
 
         if anima_training_mode == "finetune":
             _strip_network_training_keys(config)
@@ -145,6 +191,10 @@ def resolve_training_backend(config: dict, model_train_type: str) -> Tuple[str, 
             effective_train_type = "anima-finetune"
         else:
             _strip_keys(config, ANIMA_FINETUNE_ONLY_KEYS)
+            # The GUI intentionally trains only the DiT LoRA. Qwen3 remains
+            # frozen; this is also required when text encoder outputs are cached.
+            config["network_train_unet_only"] = True
+            config.pop("network_train_text_encoder_only", None)
             effective_train_type = "anima-lora"
 
         return effective_train_type, trainer_mapping[effective_train_type]
