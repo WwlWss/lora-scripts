@@ -15,11 +15,12 @@ Schema.intersect([
         Schema.object({
             model_type: Schema.const("anima").required(),
             anima_training_mode: Schema.union(["lora", "finetune"]).default("lora").description("Anima 训练方式：LoRA 或全参微调（全参直接训练 DiT，Qwen3 文本编码器保持冻结）"),
-            qwen3: Schema.string().role('filepicker', { type: "model-file" }).required().description("Anima 文本编码器：Qwen3-0.6B safetensors 或本地 HuggingFace 模型目录"),
-            vae: Schema.string().role('filepicker', { type: "model-file" }).required().description("Anima VAE：Qwen-Image VAE safetensors / pth"),
+            qwen3: Schema.string().role('filepicker', { type: "model-file" }).description("Anima 文本编码器：Qwen3-0.6B safetensors 或本地 HuggingFace 模型目录"),
+            vae: Schema.string().role('filepicker', { type: "model-file" }).description("Anima VAE：Qwen-Image VAE safetensors / pth"),
             llm_adapter_path: Schema.string().role('filepicker', { type: "model-file" }).description("可选：独立 LLM Adapter 权重；留空时从 DiT 中读取"),
             t5_tokenizer_path: Schema.string().role('filepicker', { type: "folder" }).description("可选：T5 tokenizer 目录；留空使用 sd-scripts 内置配置"),
         }),
+        Schema.object({}),
     ]),
 
     Schema.union([
@@ -37,6 +38,7 @@ Schema.intersect([
             anima_training_mode: Schema.const("finetune").required(),
             model_train_type: Schema.string().default("anima-finetune").disabled().description("实际训练种类"),
         }),
+        Schema.object({}),
     ]),
 
     Schema.union([
@@ -92,13 +94,13 @@ Schema.intersect([
         }).description("训练相关参数"),
         Schema.object({
             model_type: Schema.const("anima").required(),
-            max_train_steps: Schema.number().min(1).description("可选：最大优化器步数；留空则按 max_train_epochs 控制训练"),
-            max_train_epochs: Schema.number().min(1).description("可选：最大 epoch；留空则按 max_train_steps 控制训练"),
+            max_train_steps: Schema.number().min(1).description("可选：最大优化器步数；填写后优先按 step 控制训练"),
+            max_train_epochs: Schema.number().min(1).default(1).description("最大 epoch；默认按 Epoch 控制训练；填写 max_train_steps 时后端优先 step"),
             save_every_n_steps: Schema.number().min(1).description("可选：每 N step 保存一次模型；仅在需要按 step 保存时填写"),
             train_batch_size: Schema.number().min(1).default(1).description("批量大小；优先在显存允许时提高真实 batch，再考虑梯度累积"),
             gradient_checkpointing: Schema.boolean().default(true).description("梯度检查点；显著降低显存占用"),
             gradient_accumulation_steps: Schema.number().min(1).default(1).description("梯度累加步数；显存不足以提高真实 batch 时使用"),
-        }).description("Anima 训练相关参数（max_train_steps / max_train_epochs 至少填写一个）"),
+        }).description("Anima 训练相关参数"),
     ]),
 
     Schema.union([
