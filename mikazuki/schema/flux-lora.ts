@@ -92,13 +92,13 @@ Schema.intersect([
         }).description("训练相关参数"),
         Schema.object({
             model_type: Schema.const("anima").required(),
-            max_train_steps: Schema.number().min(1).default(3000).description("最大优化器步数；适合使用 repeat 控制采样权重的数据集"),
-            max_train_epochs: Schema.number().min(1).description("可选：最大 epoch。建议与 max_train_steps 二选一；同时填写时后端优先 max_train_steps"),
-            save_every_n_steps: Schema.number().min(1).default(250).description("每 N step 保存一次模型；使用 max_train_steps 时推荐设置"),
+            max_train_steps: Schema.number().min(1).description("可选：最大优化器步数；留空则按 max_train_epochs 控制训练"),
+            max_train_epochs: Schema.number().min(1).description("可选：最大 epoch；留空则按 max_train_steps 控制训练"),
+            save_every_n_steps: Schema.number().min(1).description("可选：每 N step 保存一次模型；仅在需要按 step 保存时填写"),
             train_batch_size: Schema.number().min(1).default(1).description("批量大小；优先在显存允许时提高真实 batch，再考虑梯度累积"),
             gradient_checkpointing: Schema.boolean().default(true).description("梯度检查点；显著降低显存占用"),
             gradient_accumulation_steps: Schema.number().min(1).default(1).description("梯度累加步数；显存不足以提高真实 batch 时使用"),
-        }).description("Anima 训练相关参数"),
+        }).description("Anima 训练相关参数（max_train_steps / max_train_epochs 至少填写一个）"),
     ]),
 
     Schema.union([
